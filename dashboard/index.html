@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Arb Scanner Dashboard</title>
+<style>
+  :root {
+    --bg: #0d1117; --card: #161b22; --border: #30363d;
+    --green: #3fb950; --red: #f85149; --yellow: #d29922;
+    --blue: #58a6ff; --muted: #8b949e; --text: #e6edf3;
+    --accent: #1f6feb;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace; font-size: 14px; }
+
+  header { background: var(--card); border-bottom: 1px solid var(--border); padding: 14px 24px; display: flex; align-items: center; gap: 16px; }
+  header h1 { font-size: 16px; font-weight: 600; letter-spacing: 0.02em; }
+  .badge { background: #1a3a1a; color: var(--green); border: 1px solid var(--green); border-radius: 20px; padding: 2px 10px; font-size: 11px; font-weight: 600; }
+  .badge.red { background: #3a1a1a; color: var(--red); border-color: var(--red); }
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); margin-left: auto; }
+  #last-update { color: var(--muted); font-size: 12px; }
+
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; padding: 20px 24px 0; }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  .card label { display: block; color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  .card .val { font-size: 22px; font-weight: 700; }
+  .card .sub { color: var(--muted); font-size: 11px; margin-top: 4px; }
+  .pos { color: var(--green); } .neg { color: var(--red); } .neu { color: var(--blue); }
+
+  .section { padding: 20px 24px; }
+  .section h2 { font-size: 13px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 8px 12px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; border-bottom: 1px solid var(--border); }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,0.02); }
+
+  .edge-pill { display: inline-block; background: #1a3a1a; color: var(--green); border-radius: 4px; padding: 2px 7px; font-size: 12px; font-weight: 600; }
+  .link-btn { display: inline-block; background: var(--accent); color: #fff; border-radius: 4px; padding: 3px 8px; font-size: 11px; text-decoration: none; margin-right: 4px; }
+  .link-btn:hover { opacity: 0.85; }
+  .rationale { color: var(--muted); font-size: 12px; margin-top: 4px; max-width: 420px; line-height: 1.4; }
+
+  .pnl-chart-wrap { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 16px; }
+  canvas { width: 100% !important; }
+
+  .no-data { color: var(--muted); text-align: center; padding: 32px; font-size: 13px; }
+
+  .positions-section td.pos-side { font-weight: 700; }
+  .side-yes { color: var(--green); }
+  .side-no  { color: var(--yellow); }
+
+  .warning-banner { background: #1a1200; border: 1px solid var(--yellow); border-radius: 8px; padding: 10px 16px; margin: 16px 24px 0; font-size: 13px; color: var(--yellow); }
+
+  #halted-banner { display: none; background: #2a0000; border: 1px solid var(--red); border-radius: 8px; padding: 10px 16px; margin: 16px 24px 0; font-size: 13px; color: var(--red); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="font-size:20px">📊</div>
+  <h1>Kalshi × Polymarket Arb Scanner</h1>
+  <span class="badge">⚠ PAPER TRADING ONLY — NO REAL ORDERS</span>
+  <div id="status-dot" title="Live"></div>
+  <span id="last-update" style="margin-left:8px">Connecting…</span>
+</header>
+
+<div class="warning-banner">
+  ⚠️ &nbsp;This dashboard tracks <strong>simulated</strong> paper trades only. No real money is at risk and no orders are ever placed on Kalshi or Polymarket.
+</div>
+<div id="halted-banner">🛑 RISK HALT ACTIVE — trading simulation paused. Check terminal for reason.</div>
+
+<!-- KPI Cards -->
+<div class="grid">
+  <div class="card">
+    <label>Daily P&amp;L (simulated)</label>
+    <div class="val" id="kpi-pnl">—</div>
+    <div class="sub" id="kpi-pnl-sub">realized paper profits</div>
+  </div>
+  <div class="card">
+    <label>Unrealised MTM</label>
+    <div class="val" id="kpi-mtm">—</div>
+    <div class="sub">open positions mark-to-market</div>
+  </div>
+  <div class="card">
+    <label>Opportunities Today</label>
+    <div class="val neu" id="kpi-opps">—</div>
+    <div class="sub" id="kpi-pairs">matched pairs being watched</div>
+  </div>
+  <div class="card">
+    <label>Total Simulated Cash</label>
+    <div class="val" id="kpi-cash">—</div>
+    <div class="sub" id="kpi-cash-sub">across both venues</div>
+  </div>
+</div>
+
+<!-- P&L history chart -->
+<div class="section">
+  <h2>Daily P&amp;L History (paper)</h2>
+  <div class="pnl-chart-wrap">
+    <canvas id="pnl-chart" height="80"></canvas>
+  </div>
+</div>
+
+<!-- Live opportunities -->
+<div class="section">
+  <h2>Live Opportunities (<span id="opp-count">0</span>)</h2>
+  <div id="opps-table-wrap">
+    <div class="no-data">No arbitrage above threshold right now. Scanner is running…</div>
+  </div>
+</div>
+
+<!-- Open positions -->
+<div class="section positions-section">
+  <h2>Simulated Positions (<span id="pos-count">0</span>)</h2>
+  <div id="pos-table-wrap">
+    <div class="no-data">No open positions yet.</div>
+  </div>
+</div>
+
+<!-- Daily history table -->
+<div class="section">
+  <h2>30-Day Paper P&amp;L History</h2>
+  <div id="hist-table-wrap">
+    <div class="no-data">No history yet.</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<script>
+const API = '/state';
+let chart = null;
+
+function fmt$(v) {
+  if (v == null) return '—';
+  const s = v >= 0 ? '+$' : '-$';
+  return s + Math.abs(v).toFixed(2);
+}
+function fmtPct(v) { return (v * 100).toFixed(2) + '¢'; }
+function cls(v) { return v > 0 ? 'pos' : v < 0 ? 'neg' : 'neu'; }
+
+async function fetchState() {
+  try {
+    const r = await fetch(API + '?_=' + Date.now());
+    if (!r.ok) throw new Error(r.status);
+    return await r.json();
+  } catch(e) {
+    document.getElementById('status-dot').style.background = '#f85149';
+    return null;
+  }
+}
+
+function renderKPIs(s) {
+  const t = s.trader;
+  const pnl = t.daily_realized_pnl;
+  const mtm = t.unrealized_pnl;
+
+  const pnlEl = document.getElementById('kpi-pnl');
+  pnlEl.textContent = fmt$(pnl);
+  pnlEl.className = 'val ' + cls(pnl);
+
+  const mtmEl = document.getElementById('kpi-mtm');
+  mtmEl.textContent = fmt$(mtm);
+  mtmEl.className = 'val ' + cls(mtm);
+
+  document.getElementById('kpi-opps').textContent = s.opportunities.length;
+  document.getElementById('kpi-pairs').textContent = s.matched_pairs + ' matched pairs being watched';
+  document.getElementById('kpi-cash').textContent = '$' + t.total_cash.toFixed(2);
+  document.getElementById('kpi-cash-sub').textContent =
+    `Kalshi $${t.cash_kalshi.toFixed(0)} · Poly $${t.cash_poly.toFixed(0)}`;
+
+  document.getElementById('last-update').textContent =
+    'Updated ' + new Date(s.last_update).toLocaleTimeString();
+  document.getElementById('status-dot').style.background = '#3fb950';
+}
+
+function renderOpps(opps) {
+  document.getElementById('opp-count').textContent = opps.length;
+  const wrap = document.getElementById('opps-table-wrap');
+  if (!opps.length) {
+    wrap.innerHTML = '<div class="no-data">No arbitrage above threshold right now. Scanner is running…</div>';
+    return;
+  }
+  let html = `<table>
+    <thead><tr>
+      <th>Event</th><th>Strategy</th><th>Edge</th><th>Size</th><th>Est. Profit</th><th>Links</th>
+    </tr></thead><tbody>`;
+  for (const o of opps) {
+    const strat = o.strategy === 'buy_yes_kalshi'
+      ? '🟢 YES Kalshi · NO Poly' : '🔵 YES Poly · NO Kalshi';
+    html += `<tr>
+      <td>
+        <strong>${o.title.substring(0,70)}</strong>
+        <div class="rationale">${o.rationale.substring(0,160)}</div>
+      </td>
+      <td style="white-space:nowrap">${strat}</td>
+      <td><span class="edge-pill">${o.min_edge_pct.toFixed(2)}¢</span></td>
+      <td>${o.max_contracts} contracts</td>
+      <td class="pos">+$${o.gross_profit.toFixed(2)}</td>
+      <td>
+        <a class="link-btn" href="${o.kalshi_url}" target="_blank">Kalshi</a>
+        <a class="link-btn" href="${o.poly_url}" target="_blank">Poly</a>
+      </td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderPositions(positions) {
+  const open = positions.filter(p => p.status === 'open');
+  const closed = positions.filter(p => p.status === 'closed').slice(0, 10);
+  document.getElementById('pos-count').textContent = open.length;
+
+  const wrap = document.getElementById('pos-table-wrap');
+  const all = [...open, ...closed];
+  if (!all.length) {
+    wrap.innerHTML = '<div class="no-data">No simulated positions yet.</div>';
+    return;
+  }
+  let html = `<table>
+    <thead><tr>
+      <th>Event</th><th>Kalshi Leg</th><th>Poly Leg</th><th>Status</th><th>P&amp;L</th>
+    </tr></thead><tbody>`;
+  for (const p of all) {
+    const pnlCls = p.realized_pnl > 0 ? 'pos' : p.realized_pnl < 0 ? 'neg' : '';
+    html += `<tr>
+      <td>${p.event.substring(0,50)}</td>
+      <td><span class="pos-side ${p.k_side==='YES'?'side-yes':'side-no'}">${p.k_side}</span>
+          ${p.k_contracts}@${(p.k_price*100).toFixed(1)}¢</td>
+      <td><span class="pos-side ${p.p_side==='YES'?'side-yes':'side-no'}">${p.p_side}</span>
+          ${p.p_contracts}@${(p.p_price*100).toFixed(1)}¢</td>
+      <td>${p.status}</td>
+      <td class="${pnlCls}">${p.realized_pnl ? fmt$(p.realized_pnl) : '—'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderHistory(history) {
+  const wrap = document.getElementById('hist-table-wrap');
+  if (!history || !history.length) {
+    wrap.innerHTML = '<div class="no-data">No history yet.</div>';
+    return;
+  }
+  let html = `<table>
+    <thead><tr>
+      <th>Date</th><th>Opportunities</th><th>Trades</th><th>Realized P&amp;L</th><th>Fees Paid</th><th>Ending Cash</th>
+    </tr></thead><tbody>`;
+  for (const h of history) {
+    const cls2 = h.realized_pnl > 0 ? 'pos' : h.realized_pnl < 0 ? 'neg' : '';
+    html += `<tr>
+      <td>${h.date}</td>
+      <td>${h.opportunities}</td>
+      <td>${h.trades}</td>
+      <td class="${cls2}">${fmt$(h.realized_pnl)}</td>
+      <td class="neg">-$${Math.abs(h.fees_paid).toFixed(2)}</td>
+      <td>$${h.ending_cash.toFixed(2)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  wrap.innerHTML = html;
+}
+
+function renderChart(history) {
+  const labels = (history || []).map(h => h.date).reverse();
+  const data = (history || []).map(h => parseFloat(h.realized_pnl.toFixed(4))).reverse();
+  const ctx = document.getElementById('pnl-chart').getContext('2d');
+  if (chart) { chart.destroy(); }
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Daily Realized P&L ($)',
+        data,
+        backgroundColor: data.map(v => v >= 0 ? 'rgba(63,185,80,0.7)' : 'rgba(248,81,73,0.7)'),
+        borderColor: data.map(v => v >= 0 ? '#3fb950' : '#f85149'),
+        borderWidth: 1,
+        borderRadius: 4,
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8b949e', font: {size:11} }, grid: { color: '#21262d' } },
+        y: { ticks: { color: '#8b949e', font: {size:11}, callback: v => '$'+v.toFixed(2) },
+             grid: { color: '#21262d' } }
+      }
+    }
+  });
+}
+
+async function refresh() {
+  const s = await fetchState();
+  if (!s) return;
+  renderKPIs(s);
+  renderOpps(s.opportunities || []);
+  renderPositions((s.trader && s.trader.positions) || []);
+  renderHistory(s.history || []);
+  renderChart(s.history || []);
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

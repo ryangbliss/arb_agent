@@ -1,0 +1,11 @@
+# Secrets - never upload these
+.env
+*.pem
+
+# Local data and generated files
+data/
+reports/
+__pycache__/
+.pytest_cache/
+pytest-cache-files-*/
+.DS_Store
